@@ -297,8 +297,8 @@ const app = {
         const h = Math.floor(min / 60), m = min % 60;
         return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
     },
-    // A munkaidő összes 10 perces kezdési pontja, egyenként `free` jelöléssel.
-    // `free=false`, ha a kiválasztott `duration` nem fér be (átfedés, munkaidő vége, múlt).
+    // A munkaidő összes 10 perces kezdési pontja, egyenként `state` jelöléssel:
+    // 'free' = foglalható, 'busy' = foglalt/nem fér be, 'gap' = 10 perces lyukat hagyna.
     gridSlots: function(date, duration) {
         const sched = this.schedules.find(s => s.date === date && s.location === this.currentLocation);
         if (!sched) return [];
@@ -310,9 +310,9 @@ const app = {
         for (let t = startMin; t + 10 <= endMin; t += 10) {
             const time = this.toTime(t);
             const tEnd = t + duration;
-            let free = true;
+            let state = 'free';
             if (t + duration > endMin) {
-                free = false;
+                state = 'busy';
             } else {
                 const overlaps = dayBookings.some(b => {
                     const bStart = this.toMin(b.start);
@@ -320,31 +320,30 @@ const app = {
                     return t < bEnd && tEnd > bStart;
                 });
                 if (overlaps) {
-                    free = false;
+                    state = 'busy';
                 } else {
                     const dt = new Date(`${date}T${time}:00`);
-                    if (dt.getTime() <= earliest) free = false;
+                    if (dt.getTime() <= earliest) state = 'busy';
                 }
             }
 
-            // 10 perces lyuk elkerülése: ha közvetlenül előtte egy foglalás pontosan
-            // 10 perccel korábban ér véget, ne engedjük (ne maradjon 10 perc beragadva).
-            if (free) {
+            // 10 perces lyuk elkerülése: ha pontosan 10 perc szabad rés maradna előtte.
+            if (state === 'free') {
                 let prevEnd = startMin;
                 for (const b of dayBookings) {
                     const bEnd = this.toMin(b.end);
                     if (bEnd <= t && bEnd > prevEnd) prevEnd = bEnd;
                 }
-                if (t - prevEnd === 10) free = false;
+                if (t - prevEnd === 10) state = 'gap';
             }
-            result.push({ time, free });
+            result.push({ time, state });
         }
         return result;
     },
 
     // Csak a szabad kezdési időpontok (a gridSlots alapján)
     availableStartTimes: function(date, duration) {
-        return this.gridSlots(date, duration).filter(s => s.free).map(s => s.time);
+        return this.gridSlots(date, duration).filter(s => s.state === 'free').map(s => s.time);
     },
 
     init: function() {
@@ -1163,7 +1162,7 @@ const app = {
         summary.innerHTML = `Szolgáltatás: <strong>${this.escapeHTML(sel.label)}</strong> · Összidő: <strong>${sel.total} perc</strong>`;
         step.appendChild(summary);
 
-        if (!grid.some(s => s.free)) {
+        if (!grid.some(s => s.state === 'free')) {
             const nearest = this.findNearestFittingDate(this.bookingDate, sel.total);
             const box = document.createElement('div');
             box.className = 'booking-empty';
@@ -1218,9 +1217,16 @@ const app = {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'booking-time';
-                if (s.free) {
+                if (s.state === 'free') {
                     btn.style.cssText = 'padding:9px 12px; min-width:68px; text-align:center;';
                     btn.onclick = () => this.chooseBookingTime(s.time);
+                } else if (s.state === 'gap') {
+                    // 10 perces lyukat hagyna — kattintható, de hibaüzenetet ad
+                    btn.style.cssText = 'padding:9px 12px; min-width:68px; text-align:center;';
+                    btn.onclick = () => this.showNotification(
+                        'Ez az időpont 10 perces lyukat hagyna az előző foglalás után. Válassz közvetlenül az előző foglalás után, vagy egy későbbi időpontot!',
+                        'error'
+                    );
                 } else {
                     btn.disabled = true;
                     btn.style.cssText = 'padding:9px 12px; min-width:68px; text-align:center; opacity:0.3; cursor:not-allowed;';
