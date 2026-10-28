@@ -604,10 +604,8 @@
 
             <div id="admin-section-manage">
                 <div class="dashboard-box">
-                    <!-- Rejtett funkció aktiválása a címsorra kattintva -->
-                    <h3 class="box-header" style="cursor: pointer; user-select: none;" onclick="document.getElementById('hidden-single-slot-panel').classList.toggle('hidden')" title="Kattints ide a titkos panelhez!">Új időpont hirdetése (Óránkénti generálás) ↓ </h3>
+                    <h3 class="box-header">Munkaidő beállítása</h3>
                     
-                    <!-- Jelenlegi intervallum bekérése -->
                     <div class="add-slot-grid">
                         <select id="new-loc">
                             <option value="Fehérgyarmat">Fehérgyarmat</option>
@@ -616,24 +614,11 @@
                         <input type="date" id="new-date">
                         <input type="time" id="new-start-time" title="Kezdés">
                         <input type="time" id="new-end-time" title="Befejezés">
-                        <button class="btn" onclick="app.addSlot()">Létrehozás</button>
+                        <button class="btn" onclick="app.saveSchedule()">Mentés</button>
                     </div>
-
-                    <!-- REJTETT SZEKCIÓ (Egyedi időpont) -->
-                    <div id="hidden-single-slot-panel" class="hidden" style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed var(--bg-4);">
-                        <p style="color: var(--text-gray); font-size: 0.85rem; margin-bottom: 10px; font-style: italic;">Egyetlen konkrét időpont hozzáadása</p>
-                        <div class="add-slot-grid">
-                            <select id="single-loc">
-                                <option value="Fehérgyarmat">Fehérgyarmat</option>
-                                <option value="Debrecen">Debrecen</option>
-                            </select>
-                            <input type="date" id="single-date">
-                            <input type="time" id="single-time" title="Pontos időpont">
-                            <button class="btn btn-outline" style="border-color: var(--primary); color: var(--primary);" onclick="app.addSingleSlot()">Hozzáadás</button>
-                        </div>
-                    </div>
+                    <p style="color: var(--text-gray); font-size: 0.85rem; margin: 10px 0 0; font-style: italic;">Add meg, mettől meddig dolgozol az adott napon. A foglalható időpontok ebből 5 perces rácson számolódnak.</p>
                 </div>
-                <h3 style="margin-bottom:10px;">Aktív időpontok</h3>
+                <h3 style="margin-bottom:10px;">Munkaidő és foglalások</h3>
                 <button class="accordion-btn" onclick="app.toggleAccordion('manage-feher')">Fehérgyarmat <span class="count-badge" id="count-manage-feher">0</span></button>
                 <div id="manage-feher" class="accordion-content"><div id="list-manage-feher" class="dashboard-list"></div></div>
                 <button class="accordion-btn" onclick="app.toggleAccordion('manage-debrecen')">Debrecen <span class="count-badge" id="count-manage-debrecen">0</span></button>

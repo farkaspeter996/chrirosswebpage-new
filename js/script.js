@@ -254,7 +254,8 @@ const BOOKING_MENU = {
 };
 
 const app = {
-    data: [],
+    schedules: [],      // a fodrász munkaideje (schedules kollekció)
+    bookings: [],       // a tényleges foglalások (bookings kollekció)
     myAppointments: [],
     users: [],
     reviews: [],
@@ -263,7 +264,7 @@ const app = {
     currentAdmin: null,
     activeUser: null,
     currentLocation: 'Fehérgyarmat',
-    bookingSlotId: null,
+    bookingStartTime: null,
     bookingDate: null,
     pendingSelection: null,
     selectedBaseId: null,
@@ -287,16 +288,58 @@ const app = {
         }[tag] || tag));
     },
 
+    // --- Idő-segédfüggvények (perc-alapú számolás) ---
+    toMin: function(t) {
+        const p = String(t).split(':');
+        return (parseInt(p[0], 10) * 60) + parseInt(p[1], 10);
+    },
+    toTime: function(min) {
+        const h = Math.floor(min / 60), m = min % 60;
+        return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    },
+    // Egy adott napra a szabad 5 perces kezdési időpontok, amikre egy
+    // `duration` perc hosszú foglalás befér (munkaidőn belül, átfedés nélkül).
+    availableStartTimes: function(date, duration) {
+        const sched = this.schedules.find(s => s.date === date && s.location === this.currentLocation);
+        if (!sched) return [];
+        const startMin = this.toMin(sched.start);
+        const endMin = this.toMin(sched.end);
+        const dayBookings = this.bookings.filter(b => b.date === date && b.location === this.currentLocation);
+        const earliest = Date.now() + (6 * 60 * 60 * 1000);
+        const result = [];
+        for (let t = startMin; t + duration <= endMin; t += 5) {
+            const tEnd = t + duration;
+            const overlaps = dayBookings.some(b => {
+                const bStart = this.toMin(b.start);
+                const bEnd = this.toMin(b.end);
+                return t < bEnd && tEnd > bStart;
+            });
+            if (overlaps) continue;
+            const dt = new Date(`${date}T${this.toTime(t)}:00`);
+            if (dt.getTime() <= earliest) continue;
+            result.push(this.toTime(t));
+        }
+        return result;
+    },
+
     init: function() {
 
-        db.collection("appointments").where("booked", "==", false).onSnapshot((querySnapshot) => {
-            if (!this.currentAdmin && !this.activeUser) {
-                this.data = [];
-                querySnapshot.forEach((doc) => {
-                    this.data.push({ id: doc.id, ...doc.data() });
-                });
-                this.renderPublicSlots();
-            }
+        db.collection("schedules").onSnapshot((querySnapshot) => {
+            this.schedules = [];
+            querySnapshot.forEach((doc) => {
+                this.schedules.push({ id: doc.id, ...doc.data() });
+            });
+            this.renderPublicSlots();
+            if (this.currentAdmin) { this.renderAdminLists(); this.renderAdminCalendar(); }
+        });
+
+        db.collection("bookings").onSnapshot((querySnapshot) => {
+            this.bookings = [];
+            querySnapshot.forEach((doc) => {
+                this.bookings.push({ id: doc.id, ...doc.data() });
+            });
+            this.renderPublicSlots();
+            if (this.currentAdmin) { this.renderAdminLists(); this.renderAdminCalendar(); }
         });
 
         db.collection("reviews").onSnapshot((querySnapshot) => {
@@ -329,13 +372,6 @@ const app = {
             if (user) {
                 if (user.email === 'admin@chrissors.hu') {
                     console.log("Admin hitelesítve, védett adatok betöltése...");
-                    
-                    db.collection("appointments").onSnapshot((querySnapshot) => {
-                        this.data = [];
-                        querySnapshot.forEach((doc) => { this.data.push({ id: doc.id, ...doc.data() }); });
-                        this.renderPublicSlots();
-                        if(this.currentAdmin) { this.renderAdminLists(); this.renderAdminCalendar(); }
-                    });
 
                     db.collection("users").onSnapshot((querySnapshot) => {
                         this.users = [];
@@ -346,6 +382,8 @@ const app = {
                     });
 
                     this.currentAdmin = "Admin";
+                    this.renderAdminLists();
+                    this.renderAdminCalendar();
                     const isAtAdminUrl = window.location.hash === '#admin' || window.location.search.includes('admin');
                     if (isAtAdminUrl) this.showDashboard();
                 } else {
@@ -355,16 +393,8 @@ const app = {
                             if (userData.status === 'approved') {
                                 this.activeUser = userData;
                                 
-                                // 1. LEKÉRDEZÉS: Csak a szabad időpontok (ebben nincs személyes adat)
-                                db.collection("appointments").where("booked", "==", false).onSnapshot((querySnapshot) => {
-                                    this.data = [];
-                                    querySnapshot.forEach((doc) => { this.data.push({ id: doc.id, ...doc.data() }); });
-                                    this.renderPublicSlots();
-                                });
-
-                                // 2. LEKÉRDEZÉS: Csak a saját, lefoglalt időpontok
-                                db.collection("appointments")
-                                .where("booked", "==", true)
+                                // Saját foglalások betöltése
+                                db.collection("bookings")
                                 .where("clientUid", "==", user.uid)
                                 .onSnapshot((querySnapshot) => {
                                     this.myAppointments = [];
@@ -436,12 +466,12 @@ const app = {
         list.innerHTML = '';
 
         const myBookings = this.myAppointments.sort((a,b) => 
-            new Date(`${a.date}T${a.time}:00`) - new Date(`${b.date}T${b.time}:00`)
+            new Date(`${a.date}T${a.start}:00`) - new Date(`${b.date}T${b.start}:00`)
         );
 
         const now = new Date();
         const upcoming = myBookings.filter(slot => {
-            const apptDate = new Date(`${slot.date}T${slot.time}:00`);
+            const apptDate = new Date(`${slot.date}T${slot.start}:00`);
             return (now - apptDate) / (1000 * 60 * 60) < 1;
         });
 
@@ -452,7 +482,7 @@ const app = {
                 const item = document.createElement('div');
                 item.className = 'drawer-appt-item';
                 item.innerHTML = `
-                    <div class="drawer-appt-date">${slot.date} &nbsp; ${slot.time}</div>
+                    <div class="drawer-appt-date">${slot.date} &nbsp; ${slot.start}</div>
                     <div class="drawer-appt-loc">${slot.location}</div>
                 `;
                 list.appendChild(item);
@@ -471,12 +501,12 @@ const app = {
         }
 
         const myBookings = this.myAppointments.sort((a,b) => 
-            new Date(`${a.date}T${a.time}:00`) - new Date(`${b.date}T${b.time}:00`)
+            new Date(`${a.date}T${a.start}:00`) - new Date(`${b.date}T${b.start}:00`)
         );
 
         const now = new Date();
         const upcoming = myBookings.filter(slot => {
-            const apptDate = new Date(`${slot.date}T${slot.time}:00`);
+            const apptDate = new Date(`${slot.date}T${slot.start}:00`);
             return (now - apptDate) / (1000 * 60 * 60) < 1;
         });
 
@@ -495,7 +525,7 @@ const app = {
             card.innerHTML = `
                 <div class="hero-appt-loc">${slot.location}</div>
                 <div class="hero-appt-date">${formattedDate}</div>
-                <div class="hero-appt-time">${slot.time}</div>
+                <div class="hero-appt-time">${slot.start}</div>
             `;
             container.appendChild(card);
         });
@@ -856,7 +886,7 @@ const app = {
 
         this.bookingDate = date;
         this.pendingSelection = null;
-        this.bookingSlotId = null;
+        this.bookingStartTime = null;
         this.selectedBaseId = null;
         this.selectedAddonIds = [];
 
@@ -870,7 +900,7 @@ const app = {
         document.getElementById('booking-modal-overlay').classList.add('hidden');
         document.body.style.overflow = '';
         this.pendingSelection = null;
-        this.bookingSlotId = null;
+        this.bookingStartTime = null;
     },
 
     setBookingModalHead: function(eyebrow, title, sub) {
@@ -1073,26 +1103,7 @@ const app = {
         this.renderBookingStepTimes();
     },
 
-    // 2. lépés: idopontok
-    fittingSlots: function(date, total) {
-        const earliest = new Date(Date.now() + (6 * 60 * 60 * 1000));
-
-        return this.data.filter(item => {
-            if (item.booked) return false;
-            if (item.location !== this.currentLocation) return false;
-            if (item.date !== date) return false;
-
-            const max = item.maxDuration || 60;
-            if (max < total) return false;
-
-            let time = item.time;
-            if (/^\d:/.test(time)) time = '0' + time;
-
-            return new Date(`${item.date}T${time}:00`) > earliest;
-        })
-        .sort((a, b) => a.time.localeCompare(b.time));
-    },
-
+    // 2. lépés: idopontok — a szabad kezdési időpontokat az availableStartTimes adja
     findNearestFittingDate: function(fromDate, total) {
         const start = new Date(fromDate + 'T00:00:00');
         const pad = n => String(n).padStart(2, '0');
@@ -1101,7 +1112,7 @@ const app = {
             const d = new Date(start.getTime());
             d.setDate(d.getDate() + i);
             const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-            if (this.fittingSlots(iso, total).length > 0) return iso;
+            if (this.availableStartTimes(iso, total).length > 0) return iso;
         }
         return null;
     },
@@ -1109,7 +1120,7 @@ const app = {
     renderBookingStepTimes: function() {
         const sel = this.pendingSelection;
         const step = document.getElementById('booking-modal-step');
-        const slots = this.fittingSlots(this.bookingDate, sel.total);
+        const times = this.availableStartTimes(this.bookingDate, sel.total);
 
         document.getElementById('booking-modal-form').classList.add('hidden');
         step.classList.remove('hidden');
@@ -1127,7 +1138,7 @@ const app = {
         summary.innerHTML = `Szolgáltatás: <strong>${this.escapeHTML(sel.label)}</strong> · Összidő: <strong>${sel.total} perc</strong>`;
         step.appendChild(summary);
 
-        if (slots.length === 0) {
+        if (times.length === 0) {
             const nearest = this.findNearestFittingDate(this.bookingDate, sel.total);
             const box = document.createElement('div');
             box.className = 'booking-empty';
@@ -1162,12 +1173,13 @@ const app = {
         const list = document.createElement('div');
         list.className = 'booking-times';
 
-        slots.forEach(slot => {
+        list.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill, minmax(72px, 1fr)); gap:8px;';
+        times.forEach(t => {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'booking-time';
-            btn.innerText = slot.time;
-            btn.onclick = () => this.chooseBookingTime(slot.id);
+            btn.innerText = t;
+            btn.onclick = () => this.chooseBookingTime(t);
             list.appendChild(btn);
         });
         step.appendChild(list);
@@ -1186,14 +1198,13 @@ const app = {
     },
 
     // 3. lépés: adatok
-    chooseBookingTime: function(slotId) {
-        const slot = this.data.find(x => x.id === slotId);
-        if (!slot) return;
-
-        this.bookingSlotId = slotId;
+    chooseBookingTime: function(timeStr) {
+        const sel = this.pendingSelection;
+        this.bookingStartTime = timeStr;
+        const endStr = this.toTime(this.toMin(timeStr) + sel.total);
 
         document.getElementById('booking-details-display').innerText =
-            `${slot.location} · ${this.formatBookingDate(slot.date)} · ${slot.time}`;
+            `${this.currentLocation} · ${this.formatBookingDate(this.bookingDate)} · ${timeStr} – ${endStr}`;
         document.getElementById('client-phone').value = this.activeUser.phone || '';
         document.getElementById('client-email').value = this.activeUser.email || '';
         if (document.getElementById('client-note')) document.getElementById('client-note').value = '';
@@ -1201,7 +1212,7 @@ const app = {
         this.setBookingModalHead(
             'MEGERŐSÍTÉS',
             'Foglalás véglegesítése',
-            `${this.pendingSelection.label} · ${this.pendingSelection.total} perc`
+            `${sel.label} · ${sel.total} perc`
         );
 
         document.getElementById('booking-modal-step').classList.add('hidden');
@@ -1223,74 +1234,41 @@ const app = {
 
         if (!isEmailValid) return this.showNotification('Kérlek adj meg egy érvényes e-mail címet!', 'error');
 
-        if (!this.pendingSelection || !this.bookingSlotId) {
+        if (!this.pendingSelection || !this.bookingStartTime) {
             return this.showNotification('Válassz szolgáltatást és időpontot!', 'error');
         }
 
         const totalTime = this.pendingSelection.total;
         const selectedServices = this.pendingSelection.items.map(i => i.name);
-
-        const slot = this.data.find(x => x.id === this.bookingSlotId);
-        if (!slot) return this.showNotification('Ez az időpont már nem elérhető, kérlek válassz másikat.', 'error');
-
-        const maxAllowed = slot.maxDuration || 60;
-
-        if(totalTime > maxAllowed) return this.showNotification(`Maximum ${maxAllowed} percet foglalhatsz ide!`, 'error');
-
         const servicesStr = selectedServices.join(', ');
+
+        const start = this.bookingStartTime;
+        const end = this.toTime(this.toMin(start) + totalTime);
 
         const userNote = document.getElementById('client-note').value.trim();
         const combinedNote = userNote ? `${servicesStr} | Megjegyzés: ${userNote}` : servicesStr;
 
-        if(this.bookingSlotId) {
-            let promises = [];
-
-            let updatePromise = db.collection("appointments").doc(this.bookingSlotId).update({
-                booked: true,
-                clientUid: firebase.auth().currentUser.uid, 
-                clientName: this.activeUser.name,
-                clientInsta: this.activeUser.insta,
-                clientPhone: cleanPhone,
-                clientEmail: email,
-                clientNote: combinedNote, 
-                services: servicesStr, 
-                totalDuration: totalTime
-            });
-
-            promises.push(updatePromise);
-
-            if (totalTime <= 30 && maxAllowed === 60) {
-                let currentH = parseInt(slot.time.split(':')[0]);
-                let currentM = parseInt(slot.time.split(':')[1]);
-
-                let newM = currentM + totalTime;
-                let newH = currentH;
-                if(newM >= 60) {
-                    newH += Math.floor(newM / 60);
-                    newM = newM % 60;
-                }
-                
-                let newTimeStr = newH.toString().padStart(2, '0') + ':' + newM.toString().padStart(2, '0');
-                let newMaxDuration = 60 - totalTime;
-
-                let insertPromise = db.collection("appointments").add({
-                    location: slot.location,
-                    date: slot.date,
-                    time: newTimeStr,
-                    booked: false,
-                    maxDuration: newMaxDuration,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                
-                promises.push(insertPromise);
-            }
-
-            Promise.all(promises).then(() => {
-                // this.showNotification('Sikeres foglalás!', 'success');
-                this.closeBookingModal();
-                this.showHome();
-            });
-        }
+        db.collection("bookings").add({
+            location: this.currentLocation,
+            date: this.bookingDate,
+            start: start,
+            end: end,
+            duration: totalTime,
+            clientUid: firebase.auth().currentUser.uid,
+            clientName: this.activeUser.name,
+            clientInsta: this.activeUser.insta,
+            clientPhone: cleanPhone,
+            clientEmail: email,
+            clientNote: combinedNote,
+            services: servicesStr,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        }).then(() => {
+            this.closeBookingModal();
+            this.showHome();
+        }).catch(err => {
+            console.error("Foglalási hiba:", err);
+            this.showNotification('Hiba történt a foglalás során. Próbáld újra!', 'error');
+        });
     },
 
     openReviewForm: function(id) {
@@ -1326,15 +1304,14 @@ const app = {
         const now = new Date();
         const shownKey = `reviewPopupShown_${this.activeUser.id}`;
         const alreadyShown = JSON.parse(localStorage.getItem(shownKey) || '[]');
-        const pending = this.data.filter(slot => {
-            if (!slot.booked) return false;
-            if (slot.clientName !== this.activeUser.name) return false;
-            if (slot.clientInsta !== this.activeUser.insta) return false;
-            const apptDate = new Date(`${slot.date}T${slot.time}:00`);
+        const pending = this.bookings.filter(b => {
+            if (b.clientName !== this.activeUser.name) return false;
+            if (b.clientInsta !== this.activeUser.insta) return false;
+            const apptDate = new Date(`${b.date}T${b.start}:00`);
             const diffHours = (now - apptDate) / (1000 * 60 * 60);
             if (diffHours < 1) return false;
-            if (alreadyShown.includes(slot.id)) return false;
-            return !this.reviews.some(r => r.appointmentId === slot.id);
+            if (alreadyShown.includes(b.id)) return false;
+            return !this.reviews.some(r => r.appointmentId === b.id);
         });
         if (pending.length > 0) {
             this.showReviewPopup(pending[0].id);
@@ -1489,132 +1466,72 @@ const app = {
         else this.renderAdminLists();
     },
 
-    addSlot: function() {
+    saveSchedule: function() {
         const loc = document.getElementById('new-loc').value;
         const date = document.getElementById('new-date').value;
-        const startStr = document.getElementById('new-start-time').value; 
-        const endStr = document.getElementById('new-end-time').value; 
+        const startStr = document.getElementById('new-start-time').value;
+        const endStr = document.getElementById('new-end-time').value;
 
-        if(!date || !startStr || !endStr) return this.showNotification('Töltsd ki a dátumot és az órákat!', 'error');
+        if (!date || !startStr || !endStr) return this.showNotification('Töltsd ki a dátumot és az időpontokat!', 'error');
 
-        const startH = parseInt(startStr.split(':')[0]);
-        const endH = parseInt(endStr.split(':')[0]);
+        const startMin = this.toMin(startStr);
+        const endMin = this.toMin(endStr);
 
-        if (isNaN(startH) || isNaN(endH) || startH > endH) {
-            return this.showNotification('Érvénytelen időintervallum!', 'error');
+        if (isNaN(startMin) || isNaN(endMin) || startMin >= endMin) {
+            return this.showNotification('A kezdésnek a befejezés előtt kell lennie!', 'error');
         }
 
-        const batch = db.batch();
+        const existing = this.schedules.find(s => s.date === date && s.location === loc);
 
-        for(let h = startH; h <= endH; h++) {
-            let timeStr = h.toString().padStart(2, '0') + ':00';
-            let docRef = db.collection("appointments").doc();
-            
-            batch.set(docRef, {
+        if (existing) {
+            db.collection("schedules").doc(existing.id).update({
+                start: startStr,
+                end: endStr
+            }).then(() => {
+                this.showNotification('Munkaidő frissítve!', 'success');
+            }).catch(err => {
+                console.error("Hiba mentéskor: ", err);
+                this.showNotification('Hiba történt!', 'error');
+            });
+        } else {
+            db.collection("schedules").add({
                 location: loc,
                 date: date,
-                time: timeStr,
-                booked: false,
-                maxDuration: 60, 
+                start: startStr,
+                end: endStr,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-        }
-
-        batch.commit().then(() => {
-            this.showNotification('Időpontok sikeresen generálva!', 'success');
-            document.getElementById('new-date').value = '';
-            document.getElementById('new-start-time').value = '';
-            document.getElementById('new-end-time').value = '';
-        }).catch(err => {
-            console.error("Hiba generáláskor: ", err);
-            this.showNotification('Hiba történt!', 'error');
-        });
-    },
-
-    addSingleSlot: function() {
-        const loc = document.getElementById('single-loc').value;
-        const date = document.getElementById('single-date').value;
-        const time = document.getElementById('single-time').value;
-
-        if(!date || !time) return this.showNotification('Töltsd ki a dátumot és az időpontot!', 'error');
-
-        db.collection("appointments").add({
-            location: loc,
-            date: date,
-            time: time,
-            booked: false,
-            maxDuration: 60, 
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        }).then(() => {
-            this.showNotification('Egyedi időpont sikeresen hozzáadva!', 'success');
-
-            document.getElementById('single-time').value = '';
-        }).catch(err => {
-            console.error("Hiba generáláskor: ", err);
-            this.showNotification('Hiba történt!', 'error');
-        });
-    },
-
-    deleteSlot: function(id) {
-        if(confirm('Törlöd az időpontot?')) {
-            db.collection("appointments").doc(id).delete()
-            .then(() => {
-                this.showNotification('Törölve.', 'success');
-                const label = document.getElementById('selected-date-label').innerText;
-                if(label.includes('Foglalások:')) {
-                    const dateStr = label.split(': ')[1];
-                    this.selectCalendarDay(dateStr);
-                }
-            });
-        }
-    },
-    
-    // ÚJ FÜGGVÉNY: Teljes nap törlése
-    deleteDay: function(e, date, loc) {
-        e.stopPropagation(); // Ne nyissa le/csukja be az egész napot
-        
-        if(confirm(`Biztosan törlöd a(z) ${date} naphoz tartozó összes ${loc}i időpontot? Ezzel minden foglalás elvész!`)) {
-            const slotsToDelete = this.data.filter(s => s.date === date && s.location === loc);
-            if (slotsToDelete.length === 0) return;
-
-            const batch = db.batch();
-            slotsToDelete.forEach(slot => {
-                const docRef = db.collection("appointments").doc(slot.id);
-                batch.delete(docRef);
-            });
-
-            batch.commit().then(() => {
-                this.showNotification('A nap összes időpontja törölve.', 'success');
+            }).then(() => {
+                this.showNotification('Munkaidő elmentve!', 'success');
             }).catch(err => {
-                console.error("Hiba a nap törlésekor: ", err);
-                this.showNotification('Hiba történt a törlés során!', 'error');
+                console.error("Hiba mentéskor: ", err);
+                this.showNotification('Hiba történt!', 'error');
             });
         }
     },
 
-    republishSlot: function(id) {
-        if(confirm('Biztosan felszabadítod ezt az időpontot? A vendég adatai törlődnek, és az időpont újra foglalható lesz.')) {
-            db.collection("appointments").doc(id).update({
-                booked: false,
-                clientName: firebase.firestore.FieldValue.delete(),
-                clientInsta: firebase.firestore.FieldValue.delete(),
-                clientPhone: firebase.firestore.FieldValue.delete(),
-                clientEmail: firebase.firestore.FieldValue.delete(),
-                clientNote: firebase.firestore.FieldValue.delete(),
-                services: firebase.firestore.FieldValue.delete(),
-                totalDuration: firebase.firestore.FieldValue.delete()
-            })
+    deleteBooking: function(id) {
+        if(confirm('Törlöd ezt a foglalást?')) {
+            db.collection("bookings").doc(id).delete()
             .then(() => {
-                this.showNotification('Időpont újra meghirdetve!', 'success');
-
-                const label = document.getElementById('selected-date-label').innerText;
-                if(label.includes('Foglalások:')) {
-                    const dateStr = label.split(': ')[1];
+                this.showNotification('Foglalás törölve.', 'success');
+                const label = document.getElementById('selected-date-label');
+                if (label && label.innerText.includes('Foglalások:')) {
+                    const dateStr = label.innerText.split(': ')[1];
                     this.selectCalendarDay(dateStr);
                 }
-            })
+            }).catch(err => {
+                console.error("Hiba törléskor: ", err);
+                this.showNotification('Hiba történt!', 'error');
+            });
+        }
+    },
+
+    deleteSchedule: function(id) {
+        if(confirm('Biztosan törlöd ezt a munkanapot?')) {
+            db.collection("schedules").doc(id).delete()
+            .then(() => this.showNotification('Munkanap törölve.', 'success'))
             .catch(err => {
-                console.error("Hiba az újrahirdetéskor:", err);
+                console.error("Hiba törléskor: ", err);
                 this.showNotification('Hiba történt!', 'error');
             });
         }
@@ -1724,12 +1641,12 @@ const app = {
     },
 
     openModifyView: function(id) {
-        const slot = this.data.find(x => x.id === id);
-        if(!slot) return;
+        const b = this.bookings.find(x => x.id === id);
+        if(!b) return;
         this.modifyingSlotId = id;
-        document.getElementById('mod-date').value = slot.date;
-        document.getElementById('mod-time').value = slot.time;
-        document.getElementById('mod-note').value = slot.clientNote || '';
+        document.getElementById('mod-date').value = b.date;
+        document.getElementById('mod-time').value = b.start;
+        document.getElementById('mod-note').value = b.clientNote || '';
         this.hideAllViews();
         document.getElementById('view-modify-booking').classList.remove('hidden');
     },
@@ -1747,18 +1664,21 @@ const app = {
 
         if(!newDate || !newTime) return this.showNotification('Dátum és idő kötelező!', 'error');
 
-        const slot = this.data.find(x => x.id === this.modifyingSlotId);
+        const b = this.bookings.find(x => x.id === this.modifyingSlotId);
+        const duration = b ? (b.duration || this.toMin(b.end) - this.toMin(b.start)) : 0;
+        const newEnd = this.toTime(this.toMin(newTime) + duration);
 
-        db.collection("appointments").doc(this.modifyingSlotId).update({
+        db.collection("bookings").doc(this.modifyingSlotId).update({
             date: newDate,
-            time: newTime,
+            start: newTime,
+            end: newEnd,
             clientNote: newNote
         })
         .then(() => {
             this.showNotification('Módosítva!', 'success');
             if(confirm("Szeretnéd SMS-ben értesíteni a vendéget?")) {
-                const message = `Kedves ${slot.clientName}! Az időpontod módosult. Új időpont: ${newDate} ${newTime}. ${newNote ? 'Megjegyzés: ' + newNote : ''} Üdv: Chrissors`;
-                window.location.href = `sms:${slot.clientPhone}?body=${encodeURIComponent(message)}`;
+                const message = `Kedves ${b ? b.clientName : ''}! Az időpontod módosult. Új időpont: ${newDate} ${newTime}. ${newNote ? 'Megjegyzés: ' + newNote : ''} Üdv: Chrissors`;
+                window.location.href = `sms:${b ? b.clientPhone : ''}?body=${encodeURIComponent(message)}`;
             }
             this.modifyingSlotId = null;
             this.showDashboard();
@@ -1795,7 +1715,11 @@ const app = {
             const currentMonthStr = (month + 1).toString().padStart(2, '0');
             const currentDayStr = day.toString().padStart(2, '0');
             const dateStr = `${year}-${currentMonthStr}-${currentDayStr}`;
-            const bookingCount = this.data.filter(slot => slot.date === dateStr && slot.booked).length;
+            const bookingCount = this.bookings.filter(b => b.date === dateStr).length;
+            const hasSchedule = this.schedules.some(s => s.date === dateStr);
+            if (hasSchedule) {
+                dayDiv.style.outline = '1px solid rgba(255,255,255,0.18)';
+            }
 
             const realToday = new Date();
             const realTodayStr = `${realToday.getFullYear()}-${(realToday.getMonth() + 1).toString().padStart(2, '0')}-${realToday.getDate().toString().padStart(2, '0')}`;
@@ -1853,9 +1777,8 @@ const app = {
         label.innerText = `Foglalások: ${dateStr}`;
         listFeher.innerHTML = ''; listDebrecen.innerHTML = '';
 
-        const dayBookings = this.data.filter(slot => slot.date === dateStr && slot.booked)
-            .sort((a,b) => a.time.localeCompare(b.time));
-
+        const dayBookings = this.bookings.filter(b => b.date === dateStr)
+            .sort((a,b) => a.start.localeCompare(b.start));
 
         if(dayBookings.length === 0) {
             listFeher.innerHTML = '<p style="color:#666; text-align:center;">Nincs foglalás.</p>';
@@ -1866,58 +1789,52 @@ const app = {
         
         if(bulkContainer) bulkContainer.style.display = 'block';
 
-
-        dayBookings.forEach(slot => {
-            // --- ÚJ LOGIKA: 31 napos visszatekintés ---
-            const slotDate = new Date(slot.date);
-            const past31 = new Date(slot.date);
+        dayBookings.forEach(b => {
+            // 31 napos visszatekintés a kedvezmény jelöléshez
+            const slotDate = new Date(b.date);
+            const past31 = new Date(b.date);
             past31.setDate(slotDate.getDate() - 31);
             
             let recentBookingCount = 0;
-            if (slot.clientName) {
-                // Megszámoljuk, hány foglalása van a vendégnek az adott időpontot megelőző 31 napban
-                recentBookingCount = this.data.filter(s => {
-                    if (!s.booked || s.clientName !== slot.clientName) return false;
-                    const d = new Date(s.date);
+            if (b.clientName) {
+                recentBookingCount = this.bookings.filter(x => {
+                    if (x.clientName !== b.clientName) return false;
+                    const d = new Date(x.date);
                     return d >= past31 && d <= slotDate;
                 }).length;
             }
             
-            // Kedvezményes 
             let badgeHtml = '';
             if (recentBookingCount >= 3) {
                 badgeHtml = '<span class="discount-badge">Kedvezményes</span>';
             }
-            // --- ÚJ LOGIKA VÉGE ---
 
             const item = document.createElement('div');
             item.className = 'dashboard-item is-booked';
             item.style.display = 'block';
             
-            // JAVÍTOTT HTML STRUKTÚRA ÉS A BADGE BEILLESZTÉSE
             item.innerHTML = `
                 <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                     <div>
-                        <strong style="color:var(--primary); font-size:1.1rem;">${slot.time}</strong>
+                        <strong style="color:var(--primary); font-size:1.1rem;">${b.start} – ${b.end}</strong>
                         <div class="client-details">
-                            ${app.escapeHTML(slot.clientName)} <br>
-                            <a href="tel:${slot.clientPhone}" style="color:white;">${app.escapeHTML(slot.clientPhone)}</a>
+                            ${app.escapeHTML(b.clientName)} <br>
+                            <a href="tel:${b.clientPhone}" style="color:white;">${app.escapeHTML(b.clientPhone)}</a>
                         </div>
                     </div>
                     <div style="display:flex; flex-direction:column; align-items:flex-end; gap: 4px;">
-                        <span style="font-size:0.8rem; color:#aaa;">${app.escapeHTML(slot.clientEmail) || 'Nincs email'}</span> 
+                        <span style="font-size:0.8rem; color:#aaa;">${app.escapeHTML(b.clientEmail) || 'Nincs email'}</span> 
                         ${badgeHtml}
                     </div>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:3px; align-items:flex-end; margin-top: 10px;">
-                    <span class="delete-btn" onclick="app.deleteSlot('${slot.id}')">Törlés</span>
-                    <span class="modify-btn" onclick="app.openModifyView('${slot.id}')">Módosítás</span>
-                    <span class="republish-btn" onclick="app.republishSlot('${slot.id}')">Újrahirdetés</span>
+                    <span class="delete-btn" onclick="app.deleteBooking('${b.id}')">Törlés</span>
+                    <span class="modify-btn" onclick="app.openModifyView('${b.id}')">Módosítás</span>
                 </div>
-                ${slot.clientNote ? `<div class="client-note" style="margin-top: 8px;">"${app.escapeHTML(slot.clientNote)}"</div>` : ''}
+                ${b.clientNote ? `<div class="client-note" style="margin-top: 8px;">"${app.escapeHTML(b.clientNote)}"</div>` : ''}
             `;
             
-            if(slot.location === 'Fehérgyarmat') listFeher.appendChild(item);
+            if(b.location === 'Fehérgyarmat') listFeher.appendChild(item);
             else listDebrecen.appendChild(item);
         });
     },
@@ -1925,7 +1842,7 @@ const app = {
 sendBulkSMS: function() {
     if (!this.currentSelectedDateStr) return;
     const dateStr = this.currentSelectedDateStr;
-    const dayBookings = this.data.filter(slot => slot.date === dateStr && slot.booked);
+    const dayBookings = this.bookings.filter(b => b.date === dateStr);
 
     // Kigyűjtjük az egyedi telefonszámokat (ne kapjon valaki 2 SMS-t, ha dupla időpontja van)
     const phones = [...new Set(dayBookings.map(s => s.clientPhone).filter(Boolean))];
@@ -1958,36 +1875,31 @@ sendBulkSMS: function() {
     },
 
     renderAdminLists: function() {
-        const sorted = this.data.slice().sort((a,b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time));
         const listFeher = document.getElementById('list-manage-feher');
         const listDebrecen = document.getElementById('list-manage-debrecen');
         if (listFeher) listFeher.innerHTML = '';
         if (listDebrecen) listDebrecen.innerHTML = '';
         let counts = { mf: 0, md: 0 };
 
-        const groups = { 'Fehérgyarmat': {}, 'Debrecen': {} };
-        sorted.forEach(slot => {
-            const loc = slot.location === 'Fehérgyarmat' ? 'Fehérgyarmat' : 'Debrecen';
-            if (!groups[loc][slot.date]) groups[loc][slot.date] = [];
-            groups[loc][slot.date].push(slot);
-            if (loc === 'Fehérgyarmat') counts.mf++;
-            else counts.md++;
-        });
-
-        // Átadtam a lokáció nevét (locName) hogy a törlés függvény tudja
-        const renderLocationGroups = (container, locationGroups, locName) => {
+        const renderLocation = (container, loc) => {
             if (!container) return;
-            const dates = Object.keys(locationGroups).sort();
-            if (dates.length === 0) {
-                container.innerHTML = '<p style="color:#666; font-style:italic; padding:10px;">Nincs aktív időpont.</p>';
+            const days = this.schedules
+                .filter(s => s.location === loc)
+                .sort((a, b) => a.date.localeCompare(b.date));
+
+            if (days.length === 0) {
+                container.innerHTML = '<p style="color:#666; font-style:italic; padding:10px;">Nincs rögzített munkaidő.</p>';
                 return;
             }
-            dates.forEach(date => {
-                const slots = locationGroups[date];
-                const dateObj = new Date(date);
+
+            days.forEach(s => {
+                const bookings = this.bookings
+                    .filter(b => b.location === loc && b.date === s.date)
+                    .sort((a, b) => a.start.localeCompare(b.start));
+
+                const dateObj = new Date(s.date + 'T00:00:00');
                 const dayName = dateObj.toLocaleDateString('hu-HU', { weekday: 'long' });
-                const formattedDate = date.replace(/-/g, '.').substring(5);
-                const bookedCount = slots.filter(s => s.booked).length;
+                const formattedDate = s.date.replace(/-/g, '.').substring(5);
 
                 const dayWrapper = document.createElement('div');
                 dayWrapper.className = 'day-group';
@@ -1996,32 +1908,31 @@ sendBulkSMS: function() {
                 const header = document.createElement('div');
                 header.className = 'day-header';
                 header.style.cursor = 'pointer';
-                // ÚJ NAP TÖRLÉSE GOMB A FEJLÉCBE
                 header.innerHTML = `
-                    <span>${formattedDate} – ${dayName.charAt(0).toUpperCase() + dayName.slice(1)}</span>
+                    <span>${formattedDate} – ${dayName.charAt(0).toUpperCase() + dayName.slice(1)} <span style="color:#888; font-weight:normal;">(${s.start}–${s.end})</span></span>
                     <div style="display:flex; align-items:center; gap: 15px;">
-                        <span style="font-size:0.8rem; color:#888;">${slots.length} időpont${bookedCount > 0 ? ` · <span style="color:var(--danger)">${bookedCount} foglalt</span>` : ''}</span>
-                        <button class="delete-day-btn" onclick="app.deleteDay(event, '${date}', '${locName}')">Nap törlése</button>
+                        <span style="font-size:0.8rem; color:#888;">${bookings.length} foglalás</span>
+                        <button class="delete-day-btn" onclick="event.stopPropagation(); app.deleteSchedule('${s.id}')">Törlés</button>
                     </div>
                 `;
 
                 const slotsDiv = document.createElement('div');
                 slotsDiv.style.cssText = 'display:none; flex-direction:column; gap:8px; padding:12px 16px; background:transparent; border-top:1px solid #333;';
 
-                slots.forEach(slot => {
+                if (bookings.length === 0) {
+                    slotsDiv.innerHTML = '<p style="color:#666; font-style:italic;">Nincs foglalás erre a napra.</p>';
+                }
+
+                bookings.forEach(b => {
                     const item = document.createElement('div');
                     item.className = 'dashboard-item';
-                    item.style.cssText = 'margin:0; border-radius:4px;';
-                    if (slot.booked) item.style.borderLeftColor = 'var(--danger)';
+                    item.style.cssText = 'margin:0; border-radius:4px; border-left-color: var(--danger);';
                     item.innerHTML = `
                         <div>
-                            <span style="color:#fff; font-weight:bold;">${slot.time}</span>
-                            ${slot.booked
-                                ? `<span style="color:var(--danger); margin-left:8px; font-size:0.8rem;">[FOGLALT – ${app.escapeHTML(slot.clientName || '')}]</span>`
-                                : `<span style="color:#777; margin-left:8px; font-size:0.8rem;">[SZABAD${slot.maxDuration && slot.maxDuration < 60 ? ` - Max: ${slot.maxDuration}p` : ''}]</span>`
-                            }
+                            <span style="color:#fff; font-weight:bold;">${b.start} – ${b.end}</span>
+                            <span style="color:var(--danger); margin-left:8px; font-size:0.8rem;">[${app.escapeHTML(b.clientName || '')} – ${app.escapeHTML(b.services || '')}]</span>
                         </div>
-                        <div class="delete-btn" onclick="app.deleteSlot('${slot.id}')">Törlés</div>
+                        <div class="delete-btn" onclick="app.deleteBooking('${b.id}')">Törlés</div>
                     `;
                     slotsDiv.appendChild(item);
                 });
@@ -2035,11 +1946,13 @@ sendBulkSMS: function() {
                 dayWrapper.appendChild(header);
                 dayWrapper.appendChild(slotsDiv);
                 container.appendChild(dayWrapper);
+
+                if (loc === 'Fehérgyarmat') counts.mf++; else counts.md++;
             });
         };
 
-        renderLocationGroups(listFeher, groups['Fehérgyarmat'], 'Fehérgyarmat');
-        renderLocationGroups(listDebrecen, groups['Debrecen'], 'Debrecen');
+        renderLocation(listFeher, 'Fehérgyarmat');
+        renderLocation(listDebrecen, 'Debrecen');
 
         document.getElementById('count-manage-feher').innerText = counts.mf;
         document.getElementById('count-manage-debrecen').innerText = counts.md;
@@ -2102,33 +2015,22 @@ sendBulkSMS: function() {
         const msg = document.getElementById('no-slots-msg');
         container.innerHTML = '';
 
-        const now = new Date();
-        const tomorrow = new Date(now.getTime() + (6 * 60 * 60 * 1000));
+        const dates = new Set();
+        this.schedules.forEach(s => {
+            if (s.location !== this.currentLocation) return;
+            if (this.availableStartTimes(s.date, 5).length > 0) dates.add(s.date);
+        });
 
-        const filtered = this.data.filter(item => {
-            const isFree = item.location === this.currentLocation && !item.booked;
-            const slotDateTime = new Date(`${item.date}T${item.time}:00`);
-            const isAfter24h = slotDateTime > tomorrow;
-            return isFree && isAfter24h;
-        })
-        .sort((a,b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time));
+        const sorted = Array.from(dates).sort();
 
-        if (filtered.length === 0) {
+        if (sorted.length === 0) {
             msg.style.display = 'block';
             return;
         }
 
         msg.style.display = 'none';
 
-        const groups = {};
-        filtered.forEach(slot => {
-            if (!groups[slot.date]) {
-                groups[slot.date] = [];
-            }
-            groups[slot.date].push(slot);
-        });
-
-        Object.keys(groups).forEach(date => {
+        sorted.forEach(date => {
             const dateObj = new Date(date + 'T00:00:00');
             const weekday = dateObj.toLocaleDateString('hu-HU', { weekday: 'short' }).replace(/\.$/, '');
             const month = dateObj.toLocaleDateString('hu-HU', { month: 'short' });
