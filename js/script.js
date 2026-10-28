@@ -297,7 +297,7 @@ const app = {
         const h = Math.floor(min / 60), m = min % 60;
         return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
     },
-    // Egy adott napra a szabad 5 perces kezdési időpontok, amikre egy
+    // Egy adott napra a szabad 10 perces kezdési időpontok, amikre egy
     // `duration` perc hosszú foglalás befér (munkaidőn belül, átfedés nélkül).
     availableStartTimes: function(date, duration) {
         const sched = this.schedules.find(s => s.date === date && s.location === this.currentLocation);
@@ -307,7 +307,7 @@ const app = {
         const dayBookings = this.bookings.filter(b => b.date === date && b.location === this.currentLocation);
         const earliest = Date.now() + (6 * 60 * 60 * 1000);
         const result = [];
-        for (let t = startMin; t + duration <= endMin; t += 5) {
+        for (let t = startMin; t + duration <= endMin; t += 10) {
             const tEnd = t + duration;
             const overlaps = dayBookings.some(b => {
                 const bStart = this.toMin(b.start);
@@ -2018,7 +2018,7 @@ sendBulkSMS: function() {
         const dates = new Set();
         this.schedules.forEach(s => {
             if (s.location !== this.currentLocation) return;
-            if (this.availableStartTimes(s.date, 5).length > 0) dates.add(s.date);
+            if (this.availableStartTimes(s.date, 10).length > 0) dates.add(s.date);
         });
 
         const sorted = Array.from(dates).sort();
