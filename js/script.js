@@ -214,12 +214,12 @@ window.addEventListener('load', function () {
    FIREBASE ÉS FŐ ALKALMAZÁS-LOGIKA
    ===================================================== */
 const firebaseConfig = {
-    apiKey: "AIzaSyBbv9eJqmJipaNeb7PMTBKxckwukG02UpU",
-    authDomain: "chrissor-web.firebaseapp.com",
-    projectId: "chrissor-web",
-    storageBucket: "chrissor-web.firebasestorage.app",
-    messagingSenderId: "1016150872750",
-    appId: "1:1016150872750:web:27600263d664ba0706133f"
+    apiKey: "AIzaSyDcFowvteALCVD0l38jOi3w6jP9ysTqdrE",
+    authDomain: "chrissorswebpage-test.firebaseapp.com",
+    projectId: "chrissorswebpage-test",
+    storageBucket: "chrissorswebpage-test.firebasestorage.app",
+    messagingSenderId: "591419940473",
+    appId: "1:591419940473:web:a77a3c5d68e882c7237ea8"
 };
 
 firebase.initializeApp(firebaseConfig);
