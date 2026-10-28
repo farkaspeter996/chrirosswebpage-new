@@ -1124,7 +1124,106 @@ const app = {
     // A Foglalás gomb léptet tovább az időpontválasztóra
     confirmSelection: function(sel) {
         this.pendingSelection = sel;
-        this.renderBookingStepTimes();
+        // Először próbáljuk meg „lyukba terelni": ha van olyan szabad rés,
+        // amibe belefér a szolgáltatás, ajánljuk fel egy felugró ablakban.
+        const suggestions = this.findGapSuggestions(this.bookingDate, sel.total);
+        if (suggestions.length > 0) {
+            this.showGapSuggestions(suggestions);
+        } else {
+            this.renderBookingStepTimes();
+        }
+    },
+
+    // Megkeresi a szabad réseket (lyukakat), amikbe a szolgáltatás belefér,
+    // és a legjobban illeszkedőket adja vissza (max 3 kezdési időpont).
+    findGapSuggestions: function(date, duration) {
+        const sched = this.schedules.find(s => s.date === date && s.location === this.currentLocation);
+        if (!sched) return [];
+        const startMin = this.toMin(sched.start);
+        const endMin = this.toMin(sched.end);
+        const dayBookings = this.bookings
+            .filter(b => b.date === date && b.location === this.currentLocation)
+            .sort((a, b) => this.toMin(a.start) - this.toMin(b.start));
+        const earliest = Date.now() + (6 * 60 * 60 * 1000);
+
+        const gaps = [];
+        let cursor = startMin;
+        for (const b of dayBookings) {
+            const bStart = this.toMin(b.start);
+            const bEnd = this.toMin(b.end);
+            if (bStart > cursor) gaps.push({ start: cursor, end: bStart });
+            cursor = Math.max(cursor, bEnd);
+        }
+        if (cursor < endMin) gaps.push({ start: cursor, end: endMin });
+
+        const fits = [];
+        for (const g of gaps) {
+            const len = g.end - g.start;
+            if (len < duration) continue;
+            const dt = new Date(`${date}T${this.toTime(g.start)}:00`);
+            if (dt.getTime() <= earliest) continue;
+            fits.push({ time: this.toTime(g.start), leftover: len - duration });
+        }
+        fits.sort((a, b) => a.leftover - b.leftover);
+        return fits.slice(0, 3).map(f => f.time);
+    },
+
+    // Felugró ablak a lyukat kitöltő időpont-ajánlatokkal.
+    showGapSuggestions: function(suggestions) {
+        const total = this.pendingSelection ? this.pendingSelection.total : 0;
+
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.65); padding:20px;';
+
+        const box = document.createElement('div');
+        box.style.cssText = 'background:#161616; border:1px solid rgba(255,255,255,0.12); border-radius:16px; padding:24px; max-width:400px; width:100%;';
+
+        const title = document.createElement('h3');
+        title.style.cssText = 'margin:0 0 8px; color:white; font-size:1.1rem;';
+        title.innerText = 'Kitölthetnéd ezt a lyukat';
+        box.appendChild(title);
+
+        const sub = document.createElement('p');
+        sub.style.cssText = 'margin:0 0 16px; color:#aaa; font-size:0.9rem; line-height:1.5;';
+        sub.innerText = 'A kiválasztott szolgáltatás pont belefér az alábbi szabad résekbe. Válaszd ki valamelyiket, vagy nézd meg az összes időpontot:';
+        box.appendChild(sub);
+
+        const list = document.createElement('div');
+        list.style.cssText = 'display:flex; flex-direction:column; gap:10px;';
+        suggestions.forEach(t => {
+            const end = this.toTime(this.toMin(t) + total);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'booking-time';
+            btn.style.cssText = 'padding:12px; font-size:1rem; text-align:center;';
+            btn.innerText = `${t} – ${end}`;
+            btn.onclick = () => {
+                overlay.remove();
+                this.chooseBookingTime(t);
+            };
+            list.appendChild(btn);
+        });
+        box.appendChild(list);
+
+        const skip = document.createElement('button');
+        skip.type = 'button';
+        skip.className = 'btn btn-outline';
+        skip.style.cssText = 'width:100%; margin-top:14px; padding:10px;';
+        skip.innerText = 'Nem érdekel, mutasd az összes időpontot';
+        skip.onclick = () => {
+            overlay.remove();
+            this.renderBookingStepTimes();
+        };
+        box.appendChild(skip);
+
+        overlay.appendChild(box);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+                this.renderBookingStepTimes();
+            }
+        });
+        document.body.appendChild(overlay);
     },
 
     // 2. lépés: idopontok — a szabad kezdési időpontokat az availableStartTimes adja
