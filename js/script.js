@@ -1170,19 +1170,39 @@ const app = {
             return;
         }
 
-        const list = document.createElement('div');
-        list.className = 'booking-times';
+        // Időpontok óránkénti oszlopokba rendezve (minden óra egy oszlop)
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'display:flex; gap:12px; overflow-x:auto; padding-bottom:4px;';
 
-        list.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill, minmax(72px, 1fr)); gap:8px;';
+        const byHour = {};
         times.forEach(t => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'booking-time';
-            btn.innerText = t;
-            btn.onclick = () => this.chooseBookingTime(t);
-            list.appendChild(btn);
+            const h = t.split(':')[0];
+            (byHour[h] = byHour[h] || []).push(t);
         });
-        step.appendChild(list);
+
+        Object.keys(byHour).sort().forEach(h => {
+            const col = document.createElement('div');
+            col.style.cssText = 'flex:0 0 auto; display:flex; flex-direction:column; gap:7px;';
+
+            const head = document.createElement('div');
+            head.style.cssText = 'text-align:center; font-size:0.78rem; font-weight:700; color:var(--primary);';
+            head.innerText = h + ':00';
+            col.appendChild(head);
+
+            byHour[h].forEach(t => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'booking-time';
+                btn.style.cssText = 'padding:9px 12px; min-width:68px; text-align:center;';
+                btn.innerText = t;
+                btn.onclick = () => this.chooseBookingTime(t);
+                col.appendChild(btn);
+            });
+
+            wrapper.appendChild(col);
+        });
+
+        step.appendChild(wrapper);
 
         const actions = document.createElement('div');
         actions.className = 'booking-modal-actions';
