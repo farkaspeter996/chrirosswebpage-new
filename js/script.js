@@ -1189,17 +1189,13 @@ const app = {
 
         const head = document.createElement('div');
         head.className = 'booking-modal-head';
-        const eyebrow = document.createElement('span');
-        eyebrow.className = 'eyebrow booking-modal-eyebrow';
-        eyebrow.innerText = 'AJÁNLAT';
-        head.appendChild(eyebrow);
         const title = document.createElement('h3');
         title.className = 'booking-modal-title';
-        title.innerText = 'Kitölthetnéd ezt a lyukat';
+        title.innerText = 'Találd meg a számodra megfelelő időpontot!';
         head.appendChild(title);
         const sub = document.createElement('p');
         sub.className = 'booking-modal-sub';
-        sub.innerText = 'A kiválasztott szolgáltatás pont belefér az alábbi szabad résekbe. Válaszd ki valamelyiket, vagy nézd meg az összes időpontot.';
+        sub.innerText = 'A választott szolgáltatás az alábbi időpontokban is elérhető. Válassz a felajánlott lehetőségek közül, vagy böngéssz az összes szabad időpont között.';
         head.appendChild(sub);
         box.appendChild(head);
 
@@ -1221,7 +1217,7 @@ const app = {
         skip.type = 'button';
         skip.className = 'btn btn-outline';
         skip.style.cssText = 'width:100%; margin-top:14px; padding:10px;';
-        skip.innerText = 'Nem érdekel, mutasd az összes időpontot';
+        skip.innerText = 'Összes szabad időpont megtekintése';
         skip.onclick = () => { overlay.remove(); this.renderBookingStepTimes(); };
         box.appendChild(skip);
 
