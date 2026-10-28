@@ -326,6 +326,17 @@ const app = {
                     if (dt.getTime() <= earliest) free = false;
                 }
             }
+
+            // 10 perces lyuk elkerülése: ha közvetlenül előtte egy foglalás pontosan
+            // 10 perccel korábban ér véget, ne engedjük (ne maradjon 10 perc beragadva).
+            if (free) {
+                let prevEnd = startMin;
+                for (const b of dayBookings) {
+                    const bEnd = this.toMin(b.end);
+                    if (bEnd <= t && bEnd > prevEnd) prevEnd = bEnd;
+                }
+                if (t - prevEnd === 10) free = false;
+            }
             result.push({ time, free });
         }
         return result;
