@@ -327,18 +327,15 @@ const app = {
                 }
             }
 
-            // Lyuk-elkerülés: ha közvetlenül előtte van egy szabad 10 perces rés,
-            // ne engedjük, hogy a vendég átugorja (ne maradjon 10 perc „beragadva").
+            // Lyuk-elkerülés (enyhébb): csak a pontosan 10 perces lyukat tiltsuk,
+            // nagyobb réseket a vendég szabadon hagyhat.
             if (free) {
-                const gapStart = t - 10;
-                if (gapStart >= startMin) {
-                    const gapFree = !dayBookings.some(b => {
-                        const bStart = this.toMin(b.start);
-                        const bEnd = this.toMin(b.end);
-                        return gapStart < bEnd && t > bStart;
-                    });
-                    if (gapFree) free = false;
+                let prevEnd = startMin;
+                for (const b of dayBookings) {
+                    const bEnd = this.toMin(b.end);
+                    if (bEnd <= t && bEnd > prevEnd) prevEnd = bEnd;
                 }
+                if (t - prevEnd === 10) free = false;
             }
             result.push({ time, free });
         }
