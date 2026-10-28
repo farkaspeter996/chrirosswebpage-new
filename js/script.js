@@ -1168,25 +1168,40 @@ const app = {
         return fits.slice(0, 3).map(f => f.time);
     },
 
-    // Felugró ablak a lyukat kitöltő időpont-ajánlatokkal.
+    // Felugró ablak a lyukat kitöltő időpont-ajánlatokkal
+    // (a szolgáltatásválasztóval azonos méretű és stílusú modal).
     showGapSuggestions: function(suggestions) {
         const total = this.pendingSelection ? this.pendingSelection.total : 0;
 
         const overlay = document.createElement('div');
-        overlay.style.cssText = 'position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.65); padding:20px;';
+        overlay.className = 'booking-modal-overlay';
+        overlay.style.zIndex = '700';
 
         const box = document.createElement('div');
-        box.style.cssText = 'background:#161616; border:1px solid rgba(255,255,255,0.12); border-radius:16px; padding:24px; max-width:400px; width:100%;';
+        box.className = 'booking-modal';
 
+        const close = document.createElement('button');
+        close.className = 'booking-modal-close';
+        close.setAttribute('aria-label', 'Bezárás');
+        close.innerHTML = '&times;';
+        close.onclick = () => { overlay.remove(); this.renderBookingStepTimes(); };
+        box.appendChild(close);
+
+        const head = document.createElement('div');
+        head.className = 'booking-modal-head';
+        const eyebrow = document.createElement('span');
+        eyebrow.className = 'eyebrow booking-modal-eyebrow';
+        eyebrow.innerText = 'AJÁNLAT';
+        head.appendChild(eyebrow);
         const title = document.createElement('h3');
-        title.style.cssText = 'margin:0 0 8px; color:white; font-size:1.1rem;';
+        title.className = 'booking-modal-title';
         title.innerText = 'Kitölthetnéd ezt a lyukat';
-        box.appendChild(title);
-
+        head.appendChild(title);
         const sub = document.createElement('p');
-        sub.style.cssText = 'margin:0 0 16px; color:#aaa; font-size:0.9rem; line-height:1.5;';
-        sub.innerText = 'A kiválasztott szolgáltatás pont belefér az alábbi szabad résekbe. Válaszd ki valamelyiket, vagy nézd meg az összes időpontot:';
-        box.appendChild(sub);
+        sub.className = 'booking-modal-sub';
+        sub.innerText = 'A kiválasztott szolgáltatás pont belefér az alábbi szabad résekbe. Válaszd ki valamelyiket, vagy nézd meg az összes időpontot.';
+        head.appendChild(sub);
+        box.appendChild(head);
 
         const list = document.createElement('div');
         list.style.cssText = 'display:flex; flex-direction:column; gap:10px;';
@@ -1197,10 +1212,7 @@ const app = {
             btn.className = 'booking-time';
             btn.style.cssText = 'padding:12px; font-size:1rem; text-align:center;';
             btn.innerText = `${t} – ${end}`;
-            btn.onclick = () => {
-                overlay.remove();
-                this.chooseBookingTime(t);
-            };
+            btn.onclick = () => { overlay.remove(); this.chooseBookingTime(t); };
             list.appendChild(btn);
         });
         box.appendChild(list);
@@ -1210,18 +1222,12 @@ const app = {
         skip.className = 'btn btn-outline';
         skip.style.cssText = 'width:100%; margin-top:14px; padding:10px;';
         skip.innerText = 'Nem érdekel, mutasd az összes időpontot';
-        skip.onclick = () => {
-            overlay.remove();
-            this.renderBookingStepTimes();
-        };
+        skip.onclick = () => { overlay.remove(); this.renderBookingStepTimes(); };
         box.appendChild(skip);
 
         overlay.appendChild(box);
         overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                overlay.remove();
-                this.renderBookingStepTimes();
-            }
+            if (e.target === overlay) { overlay.remove(); this.renderBookingStepTimes(); }
         });
         document.body.appendChild(overlay);
     },
