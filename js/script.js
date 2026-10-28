@@ -297,9 +297,9 @@ const app = {
         const h = Math.floor(min / 60), m = min % 60;
         return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
     },
-    // Egy adott napra a szabad 10 perces kezdési időpontok, amikre egy
-    // `duration` perc hosszú foglalás befér (munkaidőn belül, átfedés nélkül).
-    availableStartTimes: function(date, duration) {
+    // A munkaidő összes 10 perces kezdési pontja, egyenként `free` jelöléssel.
+    // `free=false`, ha a kiválasztott `duration` nem fér be (átfedés, munkaidő vége, múlt).
+    gridSlots: function(date, duration) {
         const sched = this.schedules.find(s => s.date === date && s.location === this.currentLocation);
         if (!sched) return [];
         const startMin = this.toMin(sched.start);
@@ -307,19 +307,33 @@ const app = {
         const dayBookings = this.bookings.filter(b => b.date === date && b.location === this.currentLocation);
         const earliest = Date.now() + (6 * 60 * 60 * 1000);
         const result = [];
-        for (let t = startMin; t + duration <= endMin; t += 10) {
+        for (let t = startMin; t + 10 <= endMin; t += 10) {
+            const time = this.toTime(t);
             const tEnd = t + duration;
-            const overlaps = dayBookings.some(b => {
-                const bStart = this.toMin(b.start);
-                const bEnd = this.toMin(b.end);
-                return t < bEnd && tEnd > bStart;
-            });
-            if (overlaps) continue;
-            const dt = new Date(`${date}T${this.toTime(t)}:00`);
-            if (dt.getTime() <= earliest) continue;
-            result.push(this.toTime(t));
+            let free = true;
+            if (t + duration > endMin) {
+                free = false;
+            } else {
+                const overlaps = dayBookings.some(b => {
+                    const bStart = this.toMin(b.start);
+                    const bEnd = this.toMin(b.end);
+                    return t < bEnd && tEnd > bStart;
+                });
+                if (overlaps) {
+                    free = false;
+                } else {
+                    const dt = new Date(`${date}T${time}:00`);
+                    if (dt.getTime() <= earliest) free = false;
+                }
+            }
+            result.push({ time, free });
         }
         return result;
+    },
+
+    // Csak a szabad kezdési időpontok (a gridSlots alapján)
+    availableStartTimes: function(date, duration) {
+        return this.gridSlots(date, duration).filter(s => s.free).map(s => s.time);
     },
 
     init: function() {
@@ -1120,7 +1134,7 @@ const app = {
     renderBookingStepTimes: function() {
         const sel = this.pendingSelection;
         const step = document.getElementById('booking-modal-step');
-        const times = this.availableStartTimes(this.bookingDate, sel.total);
+        const grid = this.gridSlots(this.bookingDate, sel.total);
 
         document.getElementById('booking-modal-form').classList.add('hidden');
         step.classList.remove('hidden');
@@ -1138,7 +1152,7 @@ const app = {
         summary.innerHTML = `Szolgáltatás: <strong>${this.escapeHTML(sel.label)}</strong> · Összidő: <strong>${sel.total} perc</strong>`;
         step.appendChild(summary);
 
-        if (times.length === 0) {
+        if (!grid.some(s => s.free)) {
             const nearest = this.findNearestFittingDate(this.bookingDate, sel.total);
             const box = document.createElement('div');
             box.className = 'booking-empty';
@@ -1175,9 +1189,9 @@ const app = {
         wrapper.style.cssText = 'display:flex; gap:12px; overflow-x:auto; padding-bottom:4px;';
 
         const byHour = {};
-        times.forEach(t => {
-            const h = t.split(':')[0];
-            (byHour[h] = byHour[h] || []).push(t);
+        grid.forEach(s => {
+            const h = s.time.split(':')[0];
+            (byHour[h] = byHour[h] || []).push(s);
         });
 
         Object.keys(byHour).sort().forEach(h => {
@@ -1189,13 +1203,18 @@ const app = {
             head.innerText = h + ':00';
             col.appendChild(head);
 
-            byHour[h].forEach(t => {
+            byHour[h].forEach(s => {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'booking-time';
-                btn.style.cssText = 'padding:9px 12px; min-width:68px; text-align:center;';
-                btn.innerText = t;
-                btn.onclick = () => this.chooseBookingTime(t);
+                if (s.free) {
+                    btn.style.cssText = 'padding:9px 12px; min-width:68px; text-align:center;';
+                    btn.onclick = () => this.chooseBookingTime(s.time);
+                } else {
+                    btn.disabled = true;
+                    btn.style.cssText = 'padding:9px 12px; min-width:68px; text-align:center; opacity:0.3; cursor:not-allowed;';
+                }
+                btn.innerText = s.time;
                 col.appendChild(btn);
             });
 
