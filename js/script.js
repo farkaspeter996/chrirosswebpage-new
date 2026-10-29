@@ -1319,9 +1319,12 @@ const app = {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'booking-time';
+                btn.dataset.time = s.time;
                 if (s.state === 'free') {
                     btn.style.cssText = 'padding:9px 12px; min-width:68px; text-align:center;';
                     btn.onclick = () => this.chooseBookingTime(s.time);
+                    btn.addEventListener('mouseenter', () => this.highlightRange(s.time, sel.total));
+                    btn.addEventListener('mouseleave', () => this.clearHighlight());
                 } else if (s.state === 'gap') {
                     // 10 perces lyukat hagyna — kattintható, de hibaüzenetet ad
                     btn.style.cssText = 'padding:9px 12px; min-width:68px; text-align:center;';
@@ -1353,6 +1356,29 @@ const app = {
         actions.appendChild(back);
 
         step.appendChild(actions);
+    },
+
+    // A ráhúzott kezdési időpont által elfoglalt 10 perces rácsok kiemelése.
+    highlightRange: function(startTime, duration) {
+        const slots = Math.max(1, Math.round(duration / 10));
+        const startMin = this.toMin(startTime);
+        const times = [];
+        for (let i = 0; i < slots; i++) {
+            times.push(this.toTime(startMin + i * 10));
+        }
+        document.querySelectorAll('.booking-time[data-time]').forEach(btn => {
+            if (times.indexOf(btn.dataset.time) !== -1) {
+                btn.style.background = 'rgba(212,175,55,0.35)';
+                btn.style.borderColor = 'var(--primary)';
+            }
+        });
+    },
+
+    clearHighlight: function() {
+        document.querySelectorAll('.booking-time[data-time]').forEach(btn => {
+            btn.style.background = '';
+            btn.style.borderColor = '';
+        });
     },
 
     // 3. lépés: adatok
