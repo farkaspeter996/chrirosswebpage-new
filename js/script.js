@@ -305,7 +305,7 @@ const app = {
         const startMin = this.toMin(sched.start);
         const endMin = this.toMin(sched.end);
         const dayBookings = this.bookings.filter(b => b.date === date && b.location === this.currentLocation);
-        const earliest = Date.now() + (6 * 60 * 60 * 1000);
+        const earliest = Date.now();
         const result = [];
         for (let t = startMin; t + 10 <= endMin; t += 10) {
             const time = this.toTime(t);
@@ -327,14 +327,15 @@ const app = {
                 }
             }
 
-            // 10 perces lyuk elkerülése: ha pontosan 10 perc szabad rés maradna előtte.
+            // 10 perces lyuk elkerülése: csak ha van tényleges előző foglalás,
+            // ami pontosan 10 perccel korábban ér véget (a munkanap kezdete nem számít lyuknak).
             if (state === 'free') {
-                let prevEnd = startMin;
+                let prevEnd = null;
                 for (const b of dayBookings) {
                     const bEnd = this.toMin(b.end);
-                    if (bEnd <= t && bEnd > prevEnd) prevEnd = bEnd;
+                    if (bEnd <= t && (prevEnd === null || bEnd > prevEnd)) prevEnd = bEnd;
                 }
-                if (t - prevEnd === 10) state = 'gap';
+                if (prevEnd !== null && t - prevEnd === 10) state = 'gap';
             }
             result.push({ time, state });
         }
@@ -1144,7 +1145,7 @@ const app = {
         const dayBookings = this.bookings
             .filter(b => b.date === date && b.location === this.currentLocation)
             .sort((a, b) => this.toMin(a.start) - this.toMin(b.start));
-        const earliest = Date.now() + (6 * 60 * 60 * 1000);
+        const earliest = Date.now();
 
         const gaps = [];
         let cursor = startMin;
