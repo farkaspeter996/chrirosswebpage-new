@@ -605,13 +605,12 @@
             <div id="admin-section-manage">
                 <div class="dashboard-box">
                     <h3 class="box-header">Munkaidő beállítása</h3>
-
-                    <div style="display:flex; gap:8px; margin-bottom:12px;">
-                        <button type="button" class="loc-btn active" id="btn-sched-feher" onclick="app.selectScheduleLocation('Fehérgyarmat')" style="padding:9px 18px; font-size:0.85rem;">Fehérgyarmat</button>
-                        <button type="button" class="loc-btn" id="btn-sched-debrecen" onclick="app.selectScheduleLocation('Debrecen')" style="padding:9px 18px; font-size:0.85rem;">Debrecen</button>
-                    </div>
                     
                     <div class="add-slot-grid">
+                        <select id="new-loc">
+                            <option value="Fehérgyarmat">Fehérgyarmat</option>
+                            <option value="Debrecen">Debrecen</option>
+                        </select>
                         <input type="date" id="new-date">
                         <input type="time" id="new-start-time" title="Kezdés">
                         <input type="time" id="new-end-time" title="Befejezés">
@@ -662,17 +661,11 @@
                             <button class="btn btn-outline" style="padding: 6px 16px; font-size: 0.8rem; border-color: var(--primary); color: var(--primary);" onclick="app.sendBulkEmail()">Email küldése</button>
                         </div>
 
-                        <div class="split-view-container">
-                            <div class="split-column">
-                                <h4 style="color:var(--primary); text-align:center; margin-bottom:10px; border-bottom:1px solid var(--primary); padding-bottom:5px;">Fehérgyarmat</h4>
-                                <div id="day-list-feher" class="dashboard-list"></div>
-                            </div>
-
-                            <div class="split-column">
-                                <h4 style="color:var(--primary); text-align:center; margin-bottom:10px; border-bottom:1px solid var(--primary); padding-bottom:5px;">Debrecen</h4>
-                                <div id="day-list-debrecen" class="dashboard-list"></div>
-                            </div>
+                        <div style="display:flex; gap:8px; margin-bottom:12px;">
+                            <button type="button" class="loc-btn active" id="btn-cal-feher" onclick="app.selectCalendarLocation('Fehérgyarmat')" style="padding:8px 16px; font-size:0.85rem; flex:1;">Fehérgyarmat</button>
+                            <button type="button" class="loc-btn" id="btn-cal-debrecen" onclick="app.selectCalendarLocation('Debrecen')" style="padding:8px 16px; font-size:0.85rem; flex:1;">Debrecen</button>
                         </div>
+                        <div id="day-list" class="dashboard-list"></div>
                     </div>
                 </div>
             </div>

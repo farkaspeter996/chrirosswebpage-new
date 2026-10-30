@@ -257,7 +257,7 @@ const app = {
     currentAdmin: null,
     activeUser: null,
     currentLocation: 'Fehérgyarmat',
-    scheduleLocation: 'Fehérgyarmat',
+    calendarLocation: 'Fehérgyarmat',
     bookingStartTime: null,
     bookingDate: null,
     pendingSelection: null,
@@ -585,13 +585,14 @@ const app = {
         this.renderPublicSlots();
     },
 
-    // Admin: a munkaidő-beállítás helyszínválasztója (két külön gomb)
-    selectScheduleLocation: function(loc) {
-        this.scheduleLocation = loc;
-        const btnFeher = document.getElementById('btn-sched-feher');
-        const btnDebrecen = document.getElementById('btn-sched-debrecen');
+    // Admin (Foglalások tab): helyszínváltás két külön gombbal
+    selectCalendarLocation: function(loc) {
+        this.calendarLocation = loc;
+        const btnFeher = document.getElementById('btn-cal-feher');
+        const btnDebrecen = document.getElementById('btn-cal-debrecen');
         if (btnFeher) btnFeher.classList.toggle('active', loc === 'Fehérgyarmat');
         if (btnDebrecen) btnDebrecen.classList.toggle('active', loc === 'Debrecen');
+        if (this.currentSelectedDateStr) this.selectCalendarDay(this.currentSelectedDateStr);
     },
 
     showHome: function() {
@@ -1584,7 +1585,7 @@ const app = {
     },
 
     saveSchedule: function() {
-        const loc = this.scheduleLocation;
+        const loc = document.getElementById('new-loc').value;
         const date = document.getElementById('new-date').value;
         const startStr = document.getElementById('new-start-time').value;
         const endStr = document.getElementById('new-end-time').value;
@@ -1884,22 +1885,21 @@ const app = {
     selectCalendarDay: function(dateStr) {
         const detailsContainer = document.getElementById('calendar-day-details');
         const label = document.getElementById('selected-date-label');
-        const listFeher = document.getElementById('day-list-feher');
-        const listDebrecen = document.getElementById('day-list-debrecen');
+        const dayList = document.getElementById('day-list');
 
         const bulkContainer = document.getElementById('bulk-message-container');
         this.currentSelectedDateStr = dateStr;
 
         detailsContainer.classList.remove('hidden');
-        label.innerText = `Foglalások: ${dateStr}`;
-        listFeher.innerHTML = ''; listDebrecen.innerHTML = '';
+        label.innerText = `Foglalások: ${dateStr} · ${this.calendarLocation}`;
+        dayList.innerHTML = '';
 
-        const dayBookings = this.bookings.filter(b => b.date === dateStr)
+        const dayBookings = this.bookings
+            .filter(b => b.date === dateStr && b.location === this.calendarLocation)
             .sort((a,b) => a.start.localeCompare(b.start));
 
         if(dayBookings.length === 0) {
-            listFeher.innerHTML = '<p style="color:#666; text-align:center;">Nincs foglalás.</p>';
-            listDebrecen.innerHTML = '<p style="color:#666; text-align:center;">Nincs foglalás.</p>';
+            dayList.innerHTML = '<p style="color:#666; text-align:center;">Nincs foglalás.</p>';
             if(bulkContainer) bulkContainer.style.display = 'none';
             return;
         }
@@ -1951,8 +1951,7 @@ const app = {
                 ${b.clientNote ? `<div class="client-note" style="margin-top: 8px;">"${app.escapeHTML(b.clientNote)}"</div>` : ''}
             `;
             
-            if(b.location === 'Fehérgyarmat') listFeher.appendChild(item);
-            else listDebrecen.appendChild(item);
+            dayList.appendChild(item);
         });
     },
 
