@@ -228,28 +228,21 @@ const db = firebase.firestore();
 /* =====================================================
    FOGLALÁSI MENÜ
    -----------------------------------------------------
-   Alapszolgáltatások: önmagukban foglalhatók.
-   A „Csak Átmenet" alatt három ráadás jelenik meg KÜLÖN-
-   KÜLÖN, és ezek szabadon, többesével is kombinálhatók.
-   A ráadások önmagukban nem foglalhatók.
+   Minden szolgáltatás egy szinten, szabadon kombinálható.
 
    Az időtartamok NINCSENEK beégetve: a szolgáltatások a
    Firestore `services` kollekcióból oldódnak fel név alapján,
    így ha ott változik egy idő, az alkalmazás követi.
    ===================================================== */
 const BOOKING_MENU = {
-    // Önmagukban foglalható alapszolgáltatások
-    bases: [
-        { id: 'buzzcut',              services: ['Buzzcut'] },
-        { id: 'csak-atmenet',         services: ['Csak Átmenet'] },
-        { id: 'regen-voltam',         services: ['Régen voltam/Sok a hajam'] },
-        { id: 'teljes-fejborotvalas', services: ['Teljes Fejborotválás'] }
-    ],
-    // A „Csak Átmenet" alatt külön-külön megjelenő ráadások
-    atmenetAddons: [
-        { id: 'addon-design',  services: ['Design'] },
-        { id: 'addon-felso',   services: ['Felső Hosszból Vágás'] },
-        { id: 'addon-szakall', services: ['Szakáll igazítás'] }
+    services: [
+        { id: 'buzzcut',              name: 'Buzzcut' },
+        { id: 'csak-atmenet',         name: 'Csak Átmenet' },
+        { id: 'regen-voltam',         name: 'Régen voltam/Sok a hajam' },
+        { id: 'teljes-fejborotvalas', name: 'Teljes Fejborotválás' },
+        { id: 'design',               name: 'Design' },
+        { id: 'felso',                name: 'Felső Hosszból Vágás' },
+        { id: 'szakall',              name: 'Szakáll igazítás' }
     ]
 };
 
@@ -267,8 +260,7 @@ const app = {
     bookingStartTime: null,
     bookingDate: null,
     pendingSelection: null,
-    selectedBaseId: null,
-    selectedAddonIds: [],
+    selectedServiceIds: [],
     currentCalendarDate: new Date(),
     modifyingSlotId: null,
 
@@ -880,28 +872,15 @@ const app = {
     // Az időtartamok onnan jönnek, nincsenek beégetve.
     buildBookingMenu: function() {
         const missing = [];
+        const services = [];
 
-        const resolve = (def) => {
-            const items = [];
-            for (const name of def.services) {
-                const srv = this.findServiceByName(name);
-                if (!srv) { missing.push(name); return null; }
-                items.push({ id: srv.id, name: srv.name, time: parseInt(srv.time) || 0 });
-            }
-            return {
-                id: def.id,
-                items: items,
-                label: items.map(i => i.name).join(' + '),
-                total: items.reduce((sum, i) => sum + i.time, 0)
-            };
-        };
+        for (const def of BOOKING_MENU.services) {
+            const srv = this.findServiceByName(def.name);
+            if (!srv) { missing.push(def.name); continue; }
+            services.push({ id: def.id, name: srv.name, time: parseInt(srv.time) || 0 });
+        }
 
-        const menu = {
-            bases: BOOKING_MENU.bases.map(resolve).filter(Boolean),
-            addons: BOOKING_MENU.atmenetAddons.map(resolve).filter(Boolean)
-        };
-        menu.missing = [...new Set(missing)];
-        return menu;
+        return { services, missing: [...new Set(missing)] };
     },
 
     /* ---------- Felugró foglalási ablak ---------- */
@@ -912,8 +891,7 @@ const app = {
         this.bookingDate = date;
         this.pendingSelection = null;
         this.bookingStartTime = null;
-        this.selectedBaseId = null;
-        this.selectedAddonIds = [];
+        this.selectedServiceIds = [];
 
         document.getElementById('booking-modal-overlay').classList.remove('hidden');
         document.body.style.overflow = 'hidden';
@@ -958,7 +936,7 @@ const app = {
             console.warn('[Foglalási menü] Ezek a nevek nem találhatók a Firestore `services` kollekcióban, ezért a hozzájuk tartozó csomagok kimaradnak:', menu.missing);
         }
 
-        if (menu.bases.length === 0) {
+        if (menu.services.length === 0) {
             step.innerHTML = '<div class="booking-empty">A szolgáltatások betöltése folyamatban van. Kérlek várj egy pillanatot, majd nyisd meg újra a dátumot.</div>';
             return;
         }
@@ -968,44 +946,23 @@ const app = {
 
     /* ---------- 1. lépés: kiválasztás (nem lép tovább azonnal) ---------- */
 
-    // A kiválasztott alap + a bejelölt ráadások összegzése
+    // A kijelölt szolgáltatások összegzése (több is választható)
     currentSelection: function(menu) {
-        if (!this.selectedBaseId) return null;
-
-        const base = menu.bases.find(b => b.id === this.selectedBaseId);
-        if (!base) return null;
-
-        let items = base.items.slice();
-
-        // A ráadások csak a „Csak Átmenet" alatt értelmezettek,
-        // és külön-külön, szabadon kombinálhatók
-        if (this.selectedBaseId === 'csak-atmenet') {
-            menu.addons.forEach(addon => {
-                if (this.selectedAddonIds.indexOf(addon.id) !== -1) {
-                    items = items.concat(addon.items);
-                }
-            });
-        }
+        const items = menu.services.filter(s => this.selectedServiceIds.indexOf(s.id) !== -1);
+        if (items.length === 0) return null;
 
         return {
-            id: base.id,
             items: items,
             total: items.reduce((sum, i) => sum + i.time, 0),
             label: items.map(i => i.name).join(', ')
         };
     },
 
-    selectBase: function(id) {
-        this.selectedBaseId = id;
-        if (id !== 'csak-atmenet') this.selectedAddonIds = [];
-        this.refreshServiceSelection();
-    },
-
-    // A ráadásokat külön-külön lehet be- és kikapcsolni
-    selectAddon: function(id) {
-        const i = this.selectedAddonIds.indexOf(id);
-        if (i === -1) this.selectedAddonIds.push(id);
-        else this.selectedAddonIds.splice(i, 1);
+    // Egy szolgáltatás be- vagy kikapcsolása
+    toggleService: function(id) {
+        const i = this.selectedServiceIds.indexOf(id);
+        if (i === -1) this.selectedServiceIds.push(id);
+        else this.selectedServiceIds.splice(i, 1);
         this.refreshServiceSelection();
     },
 
@@ -1016,8 +973,8 @@ const app = {
         step.appendChild(this.buildServiceSelection(this.buildBookingMenu()));
     },
 
-    // Egy választható sor. A ráadások négyzetes (több is bejelölhető),
-    // az alapok kör alakú jelölést kapnak (egyszerre csak egy).
+    // Egy választható sor. Minden szolgáltatás négyzetes jelölést kap,
+    // többet is be lehet jelölni.
     buildOptionButton: function(opts) {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -1045,52 +1002,18 @@ const app = {
         const wrap = document.createElement('div');
         wrap.className = 'booking-options';
 
-        menu.bases.forEach(base => {
+        menu.services.forEach(srv => {
             wrap.appendChild(this.buildOptionButton({
-                label: base.label,
-                time: base.total,
-                active: this.selectedBaseId === base.id,
-                radio: true,
-                dataset: { baseId: base.id },
-                onClick: () => this.selectBase(base.id)
+                label: srv.name,
+                time: srv.time,
+                active: this.selectedServiceIds.indexOf(srv.id) !== -1,
+                dataset: { serviceId: srv.id },
+                onClick: () => this.toggleService(srv.id)
             }));
-
-            // A „Csak Átmenet" alatt jelennek meg a külön ráadások
-            if (base.id === 'csak-atmenet' && this.selectedBaseId === 'csak-atmenet') {
-                wrap.appendChild(this.buildAddonGroup(menu));
-            }
         });
 
         wrap.appendChild(this.buildSelectionFoot(menu));
         return wrap;
-    },
-
-    // A „Csak Átmenet" alatt külön-külön megjelenő ráadások
-    buildAddonGroup: function(menu) {
-        const group = document.createElement('div');
-        group.id = 'atmenet-addons';
-
-        const label = document.createElement('div');
-        label.className = 'booking-subgroup-label';
-        label.innerText = 'Ráadás hozzáadása – többet is választhatsz';
-        group.appendChild(label);
-
-        const list = document.createElement('div');
-        list.className = 'booking-options';
-
-        menu.addons.forEach(addon => {
-            list.appendChild(this.buildOptionButton({
-                label: addon.label,
-                time: addon.total,
-                active: this.selectedAddonIds.indexOf(addon.id) !== -1,
-                isAddon: true,
-                dataset: { addonId: addon.id },
-                onClick: () => this.selectAddon(addon.id)
-            }));
-        });
-
-        group.appendChild(list);
-        return group;
     },
 
     // Az összesítés és a Foglalás gomb — a lista alján
