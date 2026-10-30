@@ -257,6 +257,7 @@ const app = {
     currentAdmin: null,
     activeUser: null,
     currentLocation: 'Fehérgyarmat',
+    scheduleLocation: 'Fehérgyarmat',
     bookingStartTime: null,
     bookingDate: null,
     pendingSelection: null,
@@ -582,6 +583,15 @@ const app = {
         if(loc === 'Fehérgyarmat') btnFeher.classList.add('active');
         else btnDebrecen.classList.add('active');
         this.renderPublicSlots();
+    },
+
+    // Admin: a munkaidő-beállítás helyszínválasztója (két külön gomb)
+    selectScheduleLocation: function(loc) {
+        this.scheduleLocation = loc;
+        const btnFeher = document.getElementById('btn-sched-feher');
+        const btnDebrecen = document.getElementById('btn-sched-debrecen');
+        if (btnFeher) btnFeher.classList.toggle('active', loc === 'Fehérgyarmat');
+        if (btnDebrecen) btnDebrecen.classList.toggle('active', loc === 'Debrecen');
     },
 
     showHome: function() {
@@ -1574,7 +1584,7 @@ const app = {
     },
 
     saveSchedule: function() {
-        const loc = document.getElementById('new-loc').value;
+        const loc = this.scheduleLocation;
         const date = document.getElementById('new-date').value;
         const startStr = document.getElementById('new-start-time').value;
         const endStr = document.getElementById('new-end-time').value;

@@ -605,12 +605,13 @@
             <div id="admin-section-manage">
                 <div class="dashboard-box">
                     <h3 class="box-header">Munkaidő beállítása</h3>
+
+                    <div style="display:flex; gap:8px; margin-bottom:12px;">
+                        <button type="button" class="loc-btn active" id="btn-sched-feher" onclick="app.selectScheduleLocation('Fehérgyarmat')" style="padding:9px 18px; font-size:0.85rem;">Fehérgyarmat</button>
+                        <button type="button" class="loc-btn" id="btn-sched-debrecen" onclick="app.selectScheduleLocation('Debrecen')" style="padding:9px 18px; font-size:0.85rem;">Debrecen</button>
+                    </div>
                     
                     <div class="add-slot-grid">
-                        <select id="new-loc">
-                            <option value="Fehérgyarmat">Fehérgyarmat</option>
-                            <option value="Debrecen">Debrecen</option>
-                        </select>
                         <input type="date" id="new-date">
                         <input type="time" id="new-start-time" title="Kezdés">
                         <input type="time" id="new-end-time" title="Befejezés">
