@@ -1951,7 +1951,7 @@ sendBulkEmail: function() {
     const dateStr = this.currentSelectedDateStr;
     const dayBookings = this.bookings.filter(b => b.date === dateStr);
 
-    // Egyedi email-címek (BCC-be tesszük az adatvédelem miatt)
+    // Egyedi email-címek (a Címzett mezőbe tesszük — ezt minden kliens megbízhatóan kezeli)
     const emails = [...new Set(dayBookings.map(b => (b.clientEmail || '').trim()).filter(Boolean))];
 
     if (emails.length === 0) {
@@ -1962,10 +1962,10 @@ sendBulkEmail: function() {
     const formattedDate = this.formatBookingDate(dateStr);
     const bodyText = `Kedves Vendégem!\n\nSzeretettel várlak a lefoglalt időpontodra: ${formattedDate}.\n\nHa közbejött valami, kérlek, jelezd minél hamarabb!\n\nÜdvözlettel:\nKrisztián`;
 
-    const mailto = `mailto:?bcc=${emails.join(',')}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+    const mailto = `mailto:${emails.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
     window.location.href = mailto;
 
-    this.showNotification(`${emails.length} címzett beírva az email-kliensbe (BCC). Nyomd meg a Küldés gombot.`, 'success');
+    this.showNotification(`${emails.length} címzett beírva az email-kliensbe. Nyomd meg a Küldés gombot.`, 'success');
     },
 
     renderAdminLists: function() {
