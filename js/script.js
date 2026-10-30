@@ -1946,39 +1946,26 @@ const app = {
         });
     },
 
-sendBulkSMS: function() {
+sendBulkEmail: function() {
     if (!this.currentSelectedDateStr) return;
     const dateStr = this.currentSelectedDateStr;
     const dayBookings = this.bookings.filter(b => b.date === dateStr);
 
-    // Kigyűjtjük az egyedi telefonszámokat (ne kapjon valaki 2 SMS-t, ha dupla időpontja van)
-    const phones = [...new Set(dayBookings.map(s => s.clientPhone).filter(Boolean))];
+    // Egyedi email-címek (BCC-be tesszük az adatvédelem miatt)
+    const emails = [...new Set(dayBookings.map(b => (b.clientEmail || '').trim()).filter(Boolean))];
 
-    if (phones.length === 0) {
-        return this.showNotification('Nincs elérhető telefonszám ezen a napon.', 'error');
+    if (emails.length === 0) {
+        return this.showNotification('Nincs elérhető email-cím ezen a napon.', 'error');
     }
 
-    // Telefonszámok összefűzése vesszővel (Standard formátum csoportos SMS-hez)
-    const phoneString = phones.join(',');
+    const subject = 'Chrissors – Időpont-emlékeztető';
+    const formattedDate = this.formatBookingDate(dateStr);
+    const bodyText = `Kedves Vendégem!\n\nSzeretettel várlak a lefoglalt időpontodra: ${formattedDate}.\n\nHa közbejött valami, kérlek, jelezd minél hamarabb!\n\nÜdvözlettel:\nKrisztián`;
 
-    // A telefonszámokat automatikusan vágólapra tesszük is (vesszővel elválasztva),
-    // hogy ha a Címzett mező nem venné fel mindet automatikusan, be lehessen illeszteni
-    if (navigator.clipboard) {
-        navigator.clipboard.writeText(phoneString).catch(() => {});
-    }
+    const mailto = `mailto:?bcc=${emails.join(',')}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+    window.location.href = mailto;
 
-    // Sablonszöveg összeállítása
-    const bodyText = `Kedves Vendégem! Szeretettel várlak a holnapi (${dateStr}) lefoglalt időpontodra. Ha közbejött valami, kérlek, jelezd minél hamarabb! Üdv: Krisztián`;
-    const encodedBody = encodeURIComponent(bodyText);
-
-    const smsLink = document.createElement('a');
-    smsLink.href = `sms:${phoneString}?body=${encodedBody}`;
-    smsLink.style.display = 'none';
-    document.body.appendChild(smsLink);
-    smsLink.click();
-    smsLink.remove();
-
-    this.showNotification(`${phones.length} telefonszám a vágólapra másolva (vesszővel elválasztva), ha nem venné fel mindet automatikusan.`, 'success');
+    this.showNotification(`${emails.length} címzett beírva az email-kliensbe (BCC). Nyomd meg a Küldés gombot.`, 'success');
     },
 
     renderAdminLists: function() {
