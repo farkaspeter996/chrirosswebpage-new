@@ -1894,18 +1894,25 @@ const app = {
         label.innerText = `Foglalások: ${dateStr} · ${this.calendarLocation}`;
         dayList.innerHTML = '';
 
+        // Az email-panel mindig látható; a gomb csak akkor aktív, ha van foglalás a napon
+        if(bulkContainer) bulkContainer.style.display = 'block';
+        const hasAnyBookings = this.bookings.some(b => b.date === dateStr);
+        const emailBtn = document.getElementById('btn-bulk-email');
+        if (emailBtn) {
+            emailBtn.disabled = !hasAnyBookings;
+            emailBtn.style.opacity = hasAnyBookings ? '' : '0.5';
+            emailBtn.style.cursor = hasAnyBookings ? '' : 'not-allowed';
+        }
+
         const dayBookings = this.bookings
             .filter(b => b.date === dateStr && b.location === this.calendarLocation)
             .sort((a,b) => a.start.localeCompare(b.start));
 
         if(dayBookings.length === 0) {
             dayList.innerHTML = '<p style="color:#666; text-align:center;">Nincs foglalás.</p>';
-            if(bulkContainer) bulkContainer.style.display = 'none';
             return;
         }
         
-        if(bulkContainer) bulkContainer.style.display = 'block';
-
         dayBookings.forEach(b => {
             // 31 napos visszatekintés a kedvezmény jelöléshez
             const slotDate = new Date(b.date);
